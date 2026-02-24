@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data artifacts (keep raw dataset, ignore processed outputs)
+data/processed/
+data/interim/
+
+# Figures and reports exports can be large (optional)
+reports/*.pdf
