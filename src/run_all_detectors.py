@@ -2,16 +2,18 @@
 """
 run_all_detectors.py
 
-Runs:
-- Rolling Z-Score baseline
-- Isolation Forest baseline (feature-based)
-- LSTM Autoencoder (reconstruction error + percentile threshold + event merging)
+Week-2 complete runner (robust):
+1) Runs 3 detectors
+   - Rolling Z-Score
+   - Isolation Forest (feature-based)
+   - LSTM Autoencoder (reconstruction)
 
-Then prints a markdown table you can paste into:
-- README.md
-- reports/results_snapshot.md
+2) Prints comparison table (points/events)
 
-NOTE: This is a lightweight "Week 2" runner (no NAB label scoring yet).
+3) OPTIONAL: If NAB labels exist, also prints event-level overlap scoring
+   (TP/FP/FN + precision/recall). If labels are missing, it will SKIP cleanly.
+
+This keeps your project runnable even if you only downloaded the CSVs.
 """
 
 from pathlib import Path
@@ -19,7 +21,21 @@ import numpy as np
 
 from src.data_loader import load_nab_series, pick_default_series
 from src.features import make_features, FeatureConfig
-from src.evaluation import summarize_detection, summary_to_markdown_table
+from src.evaluation import (
+    summarize_detection,
+    summary_to_markdown_table,
+    merge_anomaly_events,
+)
+
+# Optional scoring (only used if labels file exists)
+from src.nab_scoring import (
+    LABELS_FILE,
+    load_combined_windows,
+    guess_nab_key_from_csv_path,
+    load_label_windows_for_series_key,
+    score_events_against_windows,
+    scoring_to_markdown_table,
+)
 
 import torch
 import torch.nn as nn
@@ -32,7 +48,7 @@ from sklearn.preprocessing import StandardScaler
 # Shared Config
 # ----------------------------
 CSV_PATH = pick_default_series()
-EVENT_GAP = "2h"
+EVENT_GAP = "2h"   # hourly data
 
 
 # ----------------------------
@@ -48,16 +64,17 @@ def run_zscore(series):
     roll_std = s.rolling(window=ROLL_WINDOW, min_periods=max(3, ROLL_WINDOW // 4)).std(ddof=0).replace(0.0, np.nan)
     z = (s - roll_mean) / roll_std
 
-    flags = z.abs() > ZSCORE_THRESHOLD
-    flags = flags.fillna(False).values
+    flags = (z.abs() > ZSCORE_THRESHOLD).fillna(False).values
 
-    return summarize_detection(
+    summary = summarize_detection(
         detector="RollingZScore",
         series=series.name,
         timestamps=series.df.index,
         flags=flags,
         gap=EVENT_GAP,
     )
+    events = merge_anomaly_events(series.df.index, flags, gap=EVENT_GAP)
+    return summary, events
 
 
 # ----------------------------
@@ -84,13 +101,15 @@ def run_isolation_forest(series):
     pred = model.predict(X)
     flags = (pred == -1)
 
-    return summarize_detection(
+    summary = summarize_detection(
         detector="IsolationForest",
         series=series.name,
         timestamps=Xdf.index,
         flags=flags,
         gap=EVENT_GAP,
     )
+    events = merge_anomaly_events(Xdf.index, flags, gap=EVENT_GAP)
+    return summary, events
 
 
 # ----------------------------
@@ -142,7 +161,6 @@ def reconstruction_errors(model, loader, device):
 
 
 def run_lstm_autoencoder(series):
-    # Mirrors your working settings
     SEQ_LEN = 60
     BATCH_SIZE = 64
     EPOCHS = 15
@@ -153,8 +171,8 @@ def run_lstm_autoencoder(series):
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     values = series.df["value"].astype(float).values.reshape(-1, 1)
-
     train_end = int(len(values) * TRAIN_FRACTION)
+
     scaler = StandardScaler()
     scaler.fit(values[:train_end])
     values_scaled = scaler.transform(values)
@@ -188,28 +206,70 @@ def run_lstm_autoencoder(series):
     thr = np.percentile(train_errs, PERCENTILE)
     flags = full_errs > thr
 
-    return summarize_detection(
+    summary = summarize_detection(
         detector="LSTM_Autoencoder",
         series=series.name,
         timestamps=ts_win,
         flags=flags,
         gap=EVENT_GAP,
     )
+    events = merge_anomaly_events(ts_win, flags, gap=EVENT_GAP)
+    return summary, events
 
 
-# ----------------------------
-# Main
-# ----------------------------
+def try_print_label_scoring(series, events_map):
+    """
+    If NAB labels are present, print overlap scoring table.
+    Otherwise, print a short note and return.
+    """
+    if not LABELS_FILE.exists():
+        print("\n=== NAB Label Scoring ===\n")
+        print("Skipped: NAB label file not found at:")
+        print(f"  {LABELS_FILE}")
+        print("This is OK for Week 2. You can add labels later for precision/recall scoring.")
+        return
+
+    windows_dict = load_combined_windows()
+    series_key = guess_nab_key_from_csv_path(series.path, windows_dict=windows_dict)
+    label_windows = load_label_windows_for_series_key(series_key, windows_dict=windows_dict)
+
+    scored_rows = []
+    for det_name, events in events_map.items():
+        m = score_events_against_windows(events, label_windows)
+        scored_rows.append(
+            {
+                "Detector": det_name,
+                "SeriesKey": series_key,
+                "TP": m["tp_events"],
+                "FP": m["fp_events"],
+                "FN": m["fn_windows"],
+                "Precision": m["precision"],
+                "Recall": m["recall"],
+            }
+        )
+
+    print("\n=== NAB Label Overlap Scoring (event-level) ===\n")
+    print(scoring_to_markdown_table(scored_rows))
+    print(f"\nLabel windows for series: {len(label_windows)}")
+
+
 def main():
     series = load_nab_series(CSV_PATH)
 
-    s1 = run_zscore(series)
-    s2 = run_isolation_forest(series)
-    s3 = run_lstm_autoencoder(series)
+    s1, e1 = run_zscore(series)
+    s2, e2 = run_isolation_forest(series)
+    s3, e3 = run_lstm_autoencoder(series)
 
     print("\n=== Detector Comparison (event-level) ===\n")
     print(summary_to_markdown_table([s1, s2, s3]))
     print("\nSeries path:", series.path)
+
+    events_map = {
+        "RollingZScore": e1,
+        "IsolationForest": e2,
+        "LSTM_Autoencoder": e3,
+    }
+    try_print_label_scoring(series, events_map)
 
 
 if __name__ == "__main__":
