@@ -1,58 +1,82 @@
+#!/usr/bin/env python3
+"""
+baseline_zscore.py
+
+Rolling Z-score baseline using standardized:
+- src/data_loader.py
+- src/evaluation.py
+
+Outputs:
+- figures/04_zscore_detection.png
+- Console summary + merged event count
+"""
+
 from pathlib import Path
+
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
 
-# ----------------------------
-# Config (swap FILE to try other series)
-# ----------------------------
-FILE = "ambient_temperature_system_failure.csv"
+from src.data_loader import load_nab_series, pick_default_series
+from src.evaluation import summarize_detection
 
-# Choose which NAB folder to use:
-SERIES_DIR = Path("data/raw/NAB/realKnownCause")
-# SERIES_DIR = Path("data/raw/NAB/realAWSCloudwatch")
 
-WINDOW = 50
-THRESHOLD = 3.0
+# ----------------------------
+# Config
+# ----------------------------
+CSV_PATH = pick_default_series()
+DETECTOR_NAME = "RollingZScore"
+
+ROLL_WINDOW = 48       # hours
+ZSCORE_THRESHOLD = 3.0 # classic threshold
+
+EVENT_GAP = "2h"
 
 FIG_DIR = Path("figures")
 FIG_DIR.mkdir(parents=True, exist_ok=True)
 OUT_PATH = FIG_DIR / "04_zscore_detection.png"
 
-# ----------------------------
-# Load data
-# ----------------------------
-file_path = SERIES_DIR / FILE
-df = pd.read_csv(file_path)
-
-df["timestamp"] = pd.to_datetime(df["timestamp"])
-df = df.sort_values("timestamp").reset_index(drop=True)
-
-values = df["value"]
 
 # ----------------------------
-# Rolling z-score
+# Load
 # ----------------------------
-rolling_mean = values.rolling(window=WINDOW, min_periods=WINDOW).mean()
-rolling_std = values.rolling(window=WINDOW, min_periods=WINDOW).std()
+series = load_nab_series(CSV_PATH)
+df = series.df
+s = df["value"].astype(float)
 
-z = (values - rolling_mean) / rolling_std
-anomalies = np.abs(z) > THRESHOLD
+# Rolling z-score (past-looking)
+roll_mean = s.rolling(window=ROLL_WINDOW, min_periods=max(3, ROLL_WINDOW // 4)).mean()
+roll_std = s.rolling(window=ROLL_WINDOW, min_periods=max(3, ROLL_WINDOW // 4)).std(ddof=0).replace(0.0, np.nan)
+z = (s - roll_mean) / roll_std
+
+# Flag anomalies
+flags = z.abs() > ZSCORE_THRESHOLD
+flags = flags.fillna(False).values  # align to array of bool
+
+# Summarize
+summary = summarize_detection(
+    detector=DETECTOR_NAME,
+    series=series.name,
+    timestamps=df.index,
+    flags=flags,
+    gap=EVENT_GAP,
+)
+
+print(f"Loaded: {series.path} | rows={len(df):,}")
+print(f"Detected anomalies (points): {summary.n_flagged_points}")
+print(f"Merged anomaly events: {summary.n_events} (merge gap={EVENT_GAP})")
+
 
 # ----------------------------
 # Plot
 # ----------------------------
 plt.figure()
-plt.plot(df["timestamp"], values, label="Signal")
+plt.plot(df.index, s.values, label="Signal")
 
-plt.scatter(
-    df.loc[anomalies, "timestamp"],
-    df.loc[anomalies, "value"],
-    s=12,
-    label=f"Anomalies (|z|>{THRESHOLD})"
-)
+# Scatter anomalies
+anomaly_idx = np.where(flags)[0]
+plt.scatter(df.index[anomaly_idx], s.values[anomaly_idx], s=12, label="Z-score anomalies")
 
-plt.title(f"Rolling Z-Score Anomaly Detection: {SERIES_DIR.name}/{FILE}")
+plt.title(f"Rolling Z-Score Detection: {series.name} (window={ROLL_WINDOW}, thr={ZSCORE_THRESHOLD})")
 plt.xlabel("Time")
 plt.ylabel("Value")
 plt.legend()
@@ -60,6 +84,5 @@ plt.tight_layout()
 plt.savefig(OUT_PATH, dpi=200)
 plt.close()
 
-print(f"Loaded: {file_path} | rows={len(df):,}")
-print(f"Detected anomalies: {int(anomalies.sum())}")
 print(f"Saved → {OUT_PATH}")
+
