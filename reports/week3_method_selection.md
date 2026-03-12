@@ -45,3 +45,13 @@ At this stage, the methods are compared using the number of flagged points, the 
 The selected methods provide a structured progression from simple baseline detection to more advanced machine learning and deep learning approaches. Rolling Z-Score provides a transparent statistical baseline, Isolation Forest provides a feature-based machine learning method, and the LSTM Autoencoder provides a sequence-based neural network model capable of learning temporal behavior directly from the signal.
 
 Together, these methods create a strong comparative framework for evaluating anomaly detection performance in telemetry-like time-series data while satisfying the capstone requirement that the project include model training and at least one deep learning architecture.
+
+## Implementation Status
+
+The selected methods have already been implemented in code:
+- `src/baseline_zscore.py`
+- `src/baseline_isolation_forest.py`
+- `src/model_lstm_autoencoder.py`
+- `src/run_all_detectors.py`
+
+This means the Week 3 method selection is not hypothetical; it reflects the actual methods currently built and tested in the project repository.
