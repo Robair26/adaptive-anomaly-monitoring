@@ -1,0 +1,13 @@
+detector,series,points,flagged_points,pct_flagged_points,events,event_gap
+RollingZScore,ambient_temperature_system_failure,7267,42,0.578,22,2h
+IsolationForest,ambient_temperature_system_failure,7243,73,1.0079,23,2h
+LSTM_Autoencoder,ambient_temperature_system_failure,7208,355,4.9251,9,2h
+RollingZScore,cpu_utilization_asg_misconfiguration,18050,827,4.5817,105,2h
+IsolationForest,cpu_utilization_asg_misconfiguration,18026,181,1.0041,91,2h
+LSTM_Autoencoder,cpu_utilization_asg_misconfiguration,17991,717,3.9853,7,2h
+RollingZScore,ec2_request_latency_system_failure,4032,20,0.496,13,2h
+IsolationForest,ec2_request_latency_system_failure,4008,41,1.023,11,2h
+LSTM_Autoencoder,ec2_request_latency_system_failure,3973,75,1.8877,3,2h
+RollingZScore,machine_temperature_system_failure,22695,322,1.4188,102,2h
+IsolationForest,machine_temperature_system_failure,22671,227,1.0013,35,2h
+LSTM_Autoencoder,machine_temperature_system_failure,22636,28,0.1237,1,2h
