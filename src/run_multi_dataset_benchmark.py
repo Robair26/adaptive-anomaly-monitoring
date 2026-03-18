@@ -6,7 +6,15 @@ import pandas as pd
 
 from src.data_loader import load_nab_series
 from src.features import make_features, FeatureConfig
-from src.evaluation import summarize_detection, summary_to_markdown_table, merge_anomaly_events
+from src.evaluation import summarize_detection, merge_anomaly_events
+
+from src.nab_scoring import (
+    LABELS_FILE,
+    load_combined_windows,
+    guess_nab_key_from_csv_path,
+    load_label_windows_for_series_key,
+    score_events_against_windows,
+)
 
 import torch
 import torch.nn as nn
@@ -35,14 +43,15 @@ def run_zscore(series):
     z = (s - roll_mean) / roll_std
 
     flags = (z.abs() > thr).fillna(False).values
-
-    return summarize_detection(
+    summary = summarize_detection(
         detector="RollingZScore",
         series=series.name,
         timestamps=series.df.index,
         flags=flags,
         gap=EVENT_GAP,
     )
+    events = merge_anomaly_events(series.df.index, flags, gap=EVENT_GAP)
+    return summary, events
 
 
 def run_isolation_forest(series):
@@ -66,13 +75,15 @@ def run_isolation_forest(series):
     pred = model.predict(X)
     flags = pred == -1
 
-    return summarize_detection(
+    summary = summarize_detection(
         detector="IsolationForest",
         series=series.name,
         timestamps=Xdf.index,
         flags=flags,
         gap=EVENT_GAP,
     )
+    events = merge_anomaly_events(Xdf.index, flags, gap=EVENT_GAP)
+    return summary, events
 
 
 class SeqDataset(Dataset):
@@ -165,59 +176,76 @@ def run_lstm_autoencoder(series):
     thr = np.percentile(train_errs, percentile)
     flags = full_errs > thr
 
-    return summarize_detection(
+    summary = summarize_detection(
         detector="LSTM_Autoencoder",
         series=series.name,
         timestamps=ts_win,
         flags=flags,
         gap=EVENT_GAP,
     )
+    events = merge_anomaly_events(ts_win, flags, gap=EVENT_GAP)
+    return summary, events
 
 
 def main():
     reports_dir = Path("reports")
     reports_dir.mkdir(parents=True, exist_ok=True)
 
+    if not LABELS_FILE.exists():
+        raise FileNotFoundError(f"Missing labels file: {LABELS_FILE}")
+
+    windows_dict = load_combined_windows()
     rows = []
 
     for csv_path in DATASETS:
         print(f"\nRunning detectors on: {csv_path}")
         series = load_nab_series(csv_path)
+        series_key = guess_nab_key_from_csv_path(series.path, windows_dict=windows_dict)
+        label_windows = load_label_windows_for_series_key(series_key, windows_dict=windows_dict)
 
-        summaries = [
+        detector_outputs = [
             run_zscore(series),
             run_isolation_forest(series),
             run_lstm_autoencoder(series),
         ]
 
-        for s in summaries:
+        for summary, events in detector_outputs:
+            scoring = score_events_against_windows(events, label_windows)
+
             rows.append(
                 {
-                    "detector": s.detector,
-                    "series": s.series,
-                    "points": s.n_points,
-                    "flagged_points": s.n_flagged_points,
-                    "pct_flagged_points": round(s.pct_flagged_points, 4),
-                    "events": s.n_events,
-                    "event_gap": s.event_gap,
+                    "series": summary.series,
+                    "series_key": series_key,
+                    "detector": summary.detector,
+                    "points": summary.n_points,
+                    "flagged_points": summary.n_flagged_points,
+                    "pct_flagged_points": round(summary.pct_flagged_points, 4),
+                    "events": summary.n_events,
+                    "tp": int(scoring["tp_events"]),
+                    "fp": int(scoring["fp_events"]),
+                    "fn": int(scoring["fn_windows"]),
+                    "precision": round(scoring["precision"], 4),
+                    "recall": round(scoring["recall"], 4),
+                    "event_gap": summary.event_gap,
                 }
             )
 
     df = pd.DataFrame(rows)
-    csv_out = reports_dir / "multi_dataset_results.csv"
-    md_out = reports_dir / "multi_dataset_results.md"
+
+    csv_out = reports_dir / "multi_dataset_scored_results.csv"
+    md_out = reports_dir / "multi_dataset_scored_results.md"
 
     df.to_csv(csv_out, index=False)
 
-    md_lines = ["# Multi-Dataset Benchmark Results", ""]
+    md_lines = ["# Multi-Dataset Scored Benchmark Results", ""]
     for series_name, subdf in df.groupby("series"):
         md_lines.append(f"## {series_name}")
         md_lines.append("")
-        md_lines.append("| Detector | Points | Flagged Points | % Flagged | Events | Merge Gap |")
-        md_lines.append("|---|---:|---:|---:|---:|---|")
+        md_lines.append("| Detector | Points | Flagged | % Flagged | Events | TP | FP | FN | Precision | Recall |")
+        md_lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
         for _, r in subdf.iterrows():
             md_lines.append(
-                f"| {r['detector']} | {int(r['points']):,} | {int(r['flagged_points']):,} | {r['pct_flagged_points']:.2f}% | {int(r['events'])} | {r['event_gap']} |"
+                f"| {r['detector']} | {int(r['points']):,} | {int(r['flagged_points']):,} | {r['pct_flagged_points']:.2f}% | {int(r['events'])} | {int(r['tp'])} | {int(r['fp'])} | {int(r['fn'])} | {r['precision']:.3f} | {r['recall']:.3f} |"
             )
         md_lines.append("")
 
@@ -227,7 +255,7 @@ def main():
     print(f" - {csv_out}")
     print(f" - {md_out}")
     print("\nPreview:")
-    print(df.head(12).to_string(index=False))
+    print(df.to_string(index=False))
 
 
 if __name__ == "__main__":
