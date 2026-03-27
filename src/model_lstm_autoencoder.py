@@ -1,4 +1,6 @@
 from pathlib import Path
+import sys
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -22,9 +24,9 @@ BATCH_SIZE = 64
 EPOCHS = 15
 LR = 1e-3
 
-TRAIN_FRACTION = 0.60      # Train on first 60% (mostly-normal assumption)
-PERCENTILE = 99.8          # Threshold on train reconstruction errors (stricter)
-MERGE_GAP = "2H"           # Merge anomaly windows into events if within this gap
+TRAIN_FRACTION = 0.60
+PERCENTILE = float(sys.argv[1]) if len(sys.argv) > 1 else 99.8
+MERGE_GAP = "2h"
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -38,7 +40,6 @@ OUT_ERROR = FIG_DIR / "07_lstm_ae_error.png"
 # Helpers
 # ----------------------------
 def make_windows(arr: np.ndarray, seq_len: int) -> np.ndarray:
-    """arr: (N, 1) -> windows: (N - seq_len + 1, seq_len, 1)"""
     X = []
     for i in range(len(arr) - seq_len + 1):
         X.append(arr[i : i + seq_len])
@@ -75,37 +76,27 @@ class LSTMAutoencoder(nn.Module):
         self.output_layer = nn.Linear(hidden_size, n_features)
 
     def forward(self, x):
-        # x: (B, T, F)
-        _, (h, _) = self.encoder(x)     # h: (layers, B, H)
-        latent = h[-1]                  # (B, H)
-
-        # Repeat latent across time
-        repeated = latent.unsqueeze(1).repeat(1, x.size(1), 1)  # (B, T, H)
-
-        dec_out, _ = self.decoder(repeated)   # (B, T, H)
-        out = self.output_layer(dec_out)      # (B, T, F)
+        _, (h, _) = self.encoder(x)
+        latent = h[-1]
+        repeated = latent.unsqueeze(1).repeat(1, x.size(1), 1)
+        dec_out, _ = self.decoder(repeated)
+        out = self.output_layer(dec_out)
         return out
 
 
 def reconstruction_errors(model, loader):
-    """Return per-window MSE reconstruction error."""
     model.eval()
     errs = []
     with torch.no_grad():
         for batch in loader:
             batch = batch.to(DEVICE)
             recon = model(batch)
-            mse = torch.mean((recon - batch) ** 2, dim=(1, 2))  # (B,)
+            mse = torch.mean((recon - batch) ** 2, dim=(1, 2))
             errs.append(mse.detach().cpu().numpy())
     return np.concatenate(errs, axis=0)
 
 
-def merge_anomaly_events(timestamps: pd.Series, flags: np.ndarray, gap: str = "2H"):
-    """
-    Convert per-window anomaly flags into merged anomaly events.
-    Any flagged points within `gap` are considered the same event.
-    Returns a list of (start_ts, end_ts).
-    """
+def merge_anomaly_events(timestamps: pd.Series, flags: np.ndarray, gap: str = "2h"):
     ts = pd.to_datetime(timestamps).reset_index(drop=True)
     flagged = ts[flags].reset_index(drop=True)
 
@@ -139,19 +130,15 @@ df = df.sort_values("timestamp").reset_index(drop=True)
 
 values = df["value"].astype(float).values.reshape(-1, 1)
 
-# Fit scaler on train-only portion to avoid leakage
 train_end = int(len(values) * TRAIN_FRACTION)
 scaler = StandardScaler()
 scaler.fit(values[:train_end])
-
 values_scaled = scaler.transform(values)
 
-# Windowing
-X_all = make_windows(values_scaled, SEQ_LEN)               # (Nw, T, 1)
-ts_win = df["timestamp"].iloc[SEQ_LEN - 1 :].reset_index(drop=True)  # align to window end
+X_all = make_windows(values_scaled, SEQ_LEN)
+ts_win = df["timestamp"].iloc[SEQ_LEN - 1 :].reset_index(drop=True)
 val_win = df["value"].iloc[SEQ_LEN - 1 :].reset_index(drop=True)
 
-# Train split in window space
 train_windows_end = int(X_all.shape[0] * TRAIN_FRACTION)
 X_train = X_all[:train_windows_end]
 
@@ -180,14 +167,13 @@ for epoch in range(1, EPOCHS + 1):
     print(f"Epoch {epoch}/{EPOCHS} | loss={np.mean(epoch_losses):.6f}")
 
 # ----------------------------
-# Score anomalies (percentile threshold)
+# Score anomalies
 # ----------------------------
 train_errs = reconstruction_errors(model, train_loader)
 full_errs = reconstruction_errors(model, full_loader)
 
 thr = np.percentile(train_errs, PERCENTILE)
 flags = full_errs > thr
-
 events = merge_anomaly_events(ts_win, flags, gap=MERGE_GAP)
 
 print(f"Loaded: {file_path} | rows={len(df):,}")
@@ -211,7 +197,6 @@ plt.scatter(
     label="LSTM AE anomaly windows"
 )
 
-# Shade merged events
 for (start, end) in events:
     plt.axvspan(start, end, alpha=0.2)
 
@@ -240,7 +225,6 @@ plt.close()
 print(f"Saved → {OUT_SIGNAL}")
 print(f"Saved → {OUT_ERROR}")
 
-# Optional: print first few events for quick sanity-check
 if events:
     print("First anomaly events:")
     for s, e in events[:5]:
