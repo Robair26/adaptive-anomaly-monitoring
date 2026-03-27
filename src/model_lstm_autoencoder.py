@@ -25,7 +25,7 @@ EPOCHS = 15
 LR = 1e-3
 
 TRAIN_FRACTION = 0.60
-PERCENTILE = float(sys.argv[1]) if len(sys.argv) > 1 else 99.8
+PERCENTILE = float(sys.argv[1]) if len(sys.argv) > 1 else 99.9
 MERGE_GAP = "2h"
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
