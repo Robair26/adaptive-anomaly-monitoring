@@ -201,10 +201,6 @@ python3 src/detect.py --model hybrid --file data/raw/NAB/realKnownCause/ambient_
 
 ---
 
-## AI Use Disclosure
-
-AI tools (such as ChatGPT) were used to assist with brainstorming, structuring explanations, and refining code. All implementations, model logic, evaluation methods, and system design decisions were reviewed, modified, tested, and fully understood by the author before inclusion in this project.
-
 ---
 
 ## Author
