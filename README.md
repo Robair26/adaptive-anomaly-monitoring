@@ -2,19 +2,17 @@
 
 An end-to-end anomaly detection system for monitoring time-series infrastructure metrics. This project compares statistical, machine learning, and deep learning approaches and converts raw detections into operational alert events suitable for real-world monitoring systems.
 
-This capstone project demonstrates a complete applied machine learning system including data processing, model training, evaluation, optimization, and system-level enhancements, meeting all required components of a full ML pipeline :contentReference[oaicite:1]{index=1}.
+This capstone demonstrates a complete machine learning pipeline including data processing, model training, evaluation, optimization, and system-level enhancements.
 
 ---
 
 ## Project Goals
 
-The goal of this project is to:
-
 • Build a reusable anomaly detection framework  
-• Compare statistical, machine learning, and deep learning detectors  
-• Convert anomaly points into alert events suitable for operational monitoring  
-• Provide reproducible experiments using benchmark datasets  
-• Develop a complete ML system including training, evaluation, and improvement  
+• Compare statistical, machine learning, and deep learning models  
+• Convert anomaly points into alert events  
+• Evaluate models using real benchmark datasets  
+• Develop a complete end-to-end ML system  
 
 ---
 
@@ -22,116 +20,99 @@ The goal of this project is to:
 
 This project uses the **Numenta Anomaly Benchmark (NAB)** dataset.
 
-NAB is a widely used benchmark for evaluating anomaly detection algorithms on time-series data.
-
-Example dataset:
-
-ambient_temperature_system_failure.csv  
-
-Location:
-
-data/raw/NAB/realKnownCause/
-
-This dataset represents temperature telemetry with a known system failure anomaly.
-
----
-
-## Implemented Models
-
-### Rolling Z-Score (Statistical Baseline)
-A simple statistical detector that flags values based on deviation from a rolling mean.
-
----
-
-### Isolation Forest (Machine Learning)
-A tree-based anomaly detection model that isolates anomalies using random partitioning.
-
-Features include:
-
-• rolling statistics  
-• differencing  
-• EWMA smoothing  
-• local z-scores  
-
----
-
-### LSTM Autoencoder (Deep Learning)
-A sequence-based neural network model built in PyTorch that learns to reconstruct normal time-series behavior.
-
-Anomalies are detected using reconstruction error thresholding.
-
----
-
-### Hybrid Detector (Capstone Enhancement)
-
-A multi-model anomaly detection system combining:
-
-• Isolation Forest  
-• LSTM Autoencoder  
-
-An anomaly is only flagged when both models agree, reducing false positives.
-
-Additional enhancements:
-
-• severity classification (low / medium / high)  
-• confidence scoring  
-• event-based prioritization  
-
----
-
-## System Features
-
-### Event-Based Detection
-Anomalies are grouped into events instead of individual points using a configurable time gap (default: 2 hours).
-
----
-
-### Evaluation System
-Performance is evaluated using:
-
-• Precision  
-• Recall  
-• F1-score  
-
-Based on NAB ground-truth anomaly windows.
-
----
-
-### Multi-Dataset Benchmarking
-The system evaluates models across multiple NAB datasets:
+Datasets used:
 
 • ambient_temperature_system_failure  
 • cpu_utilization_asg_misconfiguration  
 • ec2_request_latency_system_failure  
 • machine_temperature_system_failure  
 
+Location:
+
+data/raw/NAB/realKnownCause/
+
 ---
 
-### Model Optimization (Week 6)
-LSTM Autoencoder threshold tuning was performed using multiple percentiles:
+## Implemented Models
+
+### Rolling Z-Score (Baseline)
+Statistical anomaly detector using rolling mean and standard deviation.
+
+---
+
+### Isolation Forest
+Machine learning model that isolates anomalies using random partitioning.
+
+---
+
+### LSTM Autoencoder
+Deep learning model (PyTorch) that detects anomalies using reconstruction error.
+
+Includes:
+
+• sequence modeling  
+• sliding windows  
+• threshold tuning  
+
+---
+
+### Hybrid Detector
+Combines:
+
+• Isolation Forest  
+• LSTM Autoencoder  
+
+Flags anomalies only when both models agree.
+
+Includes:
+
+• severity classification  
+• confidence scoring  
+
+---
+
+## System Features
+
+### Event-Based Detection
+Groups anomaly points into events using a time gap (2 hours).
+
+---
+
+### NAB Scoring
+Evaluates models using:
+
+• Precision  
+• Recall  
+• F1-score  
+
+---
+
+### Multi-Dataset Benchmarking
+Runs evaluation across multiple NAB datasets.
+
+---
+
+### Threshold Tuning
+LSTM Autoencoder optimized using:
 
 • 99.5  
 • 99.7  
 • 99.8  
 • 99.9  
 
-This demonstrated tradeoffs between sensitivity and precision.
+---
+
+### Anomaly Scoring
+Assigns:
+
+• confidence score  
+• severity (low / medium / high)  
 
 ---
 
-### Anomaly Scoring Module
-A reusable module assigns:
+### CLI Tool
 
-• confidence score (normalized anomaly strength)  
-• severity label (low / medium / high)  
-
-This simulates real-world alert prioritization.
-
----
-
-### CLI Tool (Production-Style Interface)
-
-Run detectors using:
+Run models using:
 
 python3 src/detect.py --model hybrid --file data.csv
 
@@ -148,45 +129,53 @@ Supported models:
 
 adaptive-anomaly-monitoring-capstone/
 
-src/  
-    data_loader.py  
-    features.py  
-    evaluation.py  
-    nab_scoring.py  
-    baseline_zscore.py  
-    baseline_isolation_forest.py  
-    model_lstm_autoencoder.py  
-    hybrid_detector.py  
-    anomaly_scoring.py  
-    detect.py  
-    run_all_detectors.py  
+src/
 
-data/  
-    raw/  
-        NAB/  
+data_loader.py — Load and preprocess NAB time-series data  
+features.py — Feature engineering (rolling stats, EWMA, diffs, z-score)  
+evaluation.py — Event merging and evaluation utilities  
+nab_scoring.py — Precision/recall scoring using NAB labels  
 
-figures/  
+baseline_zscore.py — Rolling z-score anomaly detector  
+baseline_isolation_forest.py — Isolation Forest detector  
+model_lstm_autoencoder.py — LSTM Autoencoder training and inference  
 
-reports/  
-    week5_experimental_methods.md  
-    week6_model_improvement.md  
-    benchmark_insights.md  
-    multi_dataset_scored_results.md  
-    hybrid_detector_results.md  
+hybrid_detector.py — Hybrid anomaly detection system  
+anomaly_scoring.py — Severity and confidence scoring module  
+detect.py — CLI interface for running models  
+
+run_all_detectors.py — Single dataset comparison runner  
+run_multi_dataset_benchmark.py — Multi-dataset evaluation  
+
+analyze_scored_benchmark.py — F1 scoring and best model selection  
+plot_scored_benchmark.py — Precision/recall visualization  
+plot_threshold_tuning.py — Threshold tuning visualization  
+
+data/
+
+raw/NAB/ — NAB datasets  
+
+figures/ — Generated plots and visualizations  
+
+reports/
+
+week5_experimental_methods.md  
+week6_model_improvement.md  
+benchmark_insights.md  
+multi_dataset_scored_results.md  
+hybrid_detector_results.md  
 
 ---
 
 ## Pipeline Overview
 
-The system follows this workflow:
-
 1. Load time-series data  
 2. Generate statistical features  
-3. Train and apply anomaly detection models  
-4. Convert anomaly points into events  
-5. Evaluate against labeled anomaly windows  
-6. Compare models across datasets  
-7. Apply hybrid decision logic and scoring  
+3. Train and apply models  
+4. Convert anomalies into events  
+5. Score against labeled data  
+6. Compare across datasets  
+7. Apply hybrid detection and scoring  
 
 ---
 
@@ -203,62 +192,18 @@ python3 src/detect.py --model hybrid --file data/raw/NAB/realKnownCause/ambient_
 
 ---
 
-## Example Output
-
-=== Detector Comparison (event-level) ===
-
-Detector            Series                                   Points   Flagged   % Flagged   Events   Merge Gap  
-RollingZScore       ambient_temperature_system_failure       7,267    42        0.58%       22       2h  
-IsolationForest     ambient_temperature_system_failure       7,243    73        1.01%       23       2h  
-LSTM_Autoencoder    ambient_temperature_system_failure       7,208    429       5.95%       7        2h  
-
----
-
-## Visualization
-
-Each detector generates plots showing:
-
-• original time series  
-• anomaly detections  
-• flagged anomaly regions  
-
-Saved to:
-
-figures/
-
----
-
 ## Key Insights
 
-• Isolation Forest provides the most stable performance across datasets  
+• Isolation Forest provides stable high-recall performance  
 • LSTM Autoencoder achieves higher precision but requires tuning  
-• Hybrid model reduces false positives while maintaining strong recall  
-• Statistical methods are useful baselines but less precise  
+• Hybrid model reduces false positives  
+• Preprocessing and threshold tuning significantly impact results  
 
 ---
 
-## Final System Summary
+## AI Use Disclosure
 
-This project includes all major components of a production-style ML system:
-
-• Data ingestion and preprocessing  
-• Feature engineering  
-• Model training (ML + deep learning)  
-• Model comparison and benchmarking  
-• Evaluation using labeled data  
-• Model optimization (threshold tuning)  
-• Hybrid model design  
-• Severity and confidence scoring  
-• CLI-based execution interface  
-
----
-
-## Future Improvements
-
-• Real-time anomaly detection pipeline  
-• Deployment as API or monitoring service  
-• Advanced ensemble models  
-• Explainability for anomaly reasoning  
+AI tools (such as ChatGPT) were used to assist with brainstorming, structuring explanations, and refining code. All implementations, model logic, evaluation methods, and system design decisions were reviewed, modified, tested, and fully understood by the author before inclusion in this project.
 
 ---
 
